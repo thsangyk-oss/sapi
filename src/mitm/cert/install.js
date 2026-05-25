@@ -8,7 +8,8 @@ const { log, err } = require("../logger");
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
 const LINUX_CERT_DIR = "/usr/local/share/ca-certificates";
-const ROOT_CA_CN = "9Router MITM Root CA";
+const ROOT_CA_CN = "SAPI MITM Root CA";
+const LEGACY_ROOT_CA_CN = "9Router MITM Root CA";
 
 // Get SHA1 fingerprint from cert file using Node.js crypto
 function getCertFingerprint(certPath) {
@@ -84,7 +85,10 @@ async function installCert(sudoPassword, certPath) {
 
 async function installCertMac(sudoPassword, certPath) {
   // Remove all old certs with same name first to avoid duplicate/stale cert conflict
-  const deleteOld = `security delete-certificate -c "9Router MITM Root CA" /Library/Keychains/System.keychain 2>/dev/null || true`;
+  const deleteOld = [
+    `security delete-certificate -c "${ROOT_CA_CN}" /Library/Keychains/System.keychain 2>/dev/null || true`,
+    `security delete-certificate -c "${LEGACY_ROOT_CA_CN}" /Library/Keychains/System.keychain 2>/dev/null || true`,
+  ].join(" && ");
   const install = `security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "${certPath}"`;
   try {
     await execWithPassword(`${deleteOld} && ${install}`, sudoPassword);
@@ -100,6 +104,7 @@ async function installCertWindows(certPath) {
   // Delete any stale cert with same CN before adding to avoid duplicates.
   const script = `
     certutil -delstore Root ${quotePs(ROOT_CA_CN)} 2>$null | Out-Null
+    certutil -delstore Root ${quotePs(LEGACY_ROOT_CA_CN)} 2>$null | Out-Null
     $exit = & certutil -addstore Root ${quotePs(certPath)} 2>&1
     if ($LASTEXITCODE -ne 0) { throw "certutil exit $LASTEXITCODE" }
   `;
@@ -153,7 +158,7 @@ async function uninstallCertWindows() {
 }
 
 function checkCertInstalledLinux() {
-  const certFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
+  const certFile = `${LINUX_CERT_DIR}/sapi-root-ca.crt`;
   return Promise.resolve(fs.existsSync(certFile));
 }
 
@@ -162,7 +167,7 @@ async function installCertLinux(sudoPassword, certPath) {
     log(`🔐 Cert: cannot install to system store without sudo — trust this file on clients: ${certPath}`);
     return;
   }
-  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
+  const destFile = `${LINUX_CERT_DIR}/sapi-root-ca.crt`;
   // Try update-ca-certificates (Debian/Ubuntu), fallback to update-ca-trust (Fedora/RHEL)
   const cmd = `cp "${certPath}" "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
   try {
@@ -177,7 +182,7 @@ async function uninstallCertLinux(sudoPassword) {
   if (!isSudoAvailable()) {
     return;
   }
-  const destFile = `${LINUX_CERT_DIR}/9router-root-ca.crt`;
+  const destFile = `${LINUX_CERT_DIR}/sapi-root-ca.crt`;
   const cmd = `rm -f "${destFile}" && (update-ca-certificates 2>/dev/null || update-ca-trust 2>/dev/null || true)`;
   try {
     await execWithPassword(cmd, sudoPassword);

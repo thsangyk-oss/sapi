@@ -4,7 +4,7 @@ import { getSettings } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 const SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || "9router-default-secret-change-me"
+  process.env.JWT_SECRET || "sapi-default-secret-change-me"
 );
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";

@@ -2,20 +2,20 @@ import pkg from "../../../package.json" with { type: "json" };
 
 // App configuration
 export const APP_CONFIG = {
-  name: "9Router proxy",
-  description: "AI Infrastructure Management",
+  name: "SAPI",
+  description: "AI API Gateway",
   version: pkg.version,
 };
 
 // GitHub configuration
 export const GITHUB_CONFIG = {
-  changelogUrl: "https://raw.githubusercontent.com/decolua/9router/refs/heads/master/CHANGELOG.md",
+  changelogUrl: "https://raw.githubusercontent.com/thsangyk-oss/sapi/refs/heads/main/CHANGELOG.md",
 };
 
 // Updater configuration
 export const UPDATER_CONFIG = {
-  npmPackageName: "9router",
-  installCmd: "npm i -g 9router",
+  npmPackageName: "sapi",
+  installCmd: "git pull && setup.cmd",
   exitDelayMs: 500,
   statusPort: 20129,
   statusPollIntervalMs: 1000,

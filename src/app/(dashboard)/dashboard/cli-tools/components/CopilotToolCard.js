@@ -6,6 +6,8 @@ import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
+const SAPI_ENTRY_NAMES = new Set(["SAPI", "9Router"]);
+
 export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [status, setStatus] = useState(initialStatus || null);
   const [checking, setChecking] = useState(false);
@@ -43,7 +45,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   // Pre-fill model list from existing config
   useEffect(() => {
     if (status?.config && Array.isArray(status.config) && modelList.length === 0) {
-      const entry = status.config.find((e) => e.name === "9Router");
+      const entry = status.config.find((e) => SAPI_ENTRY_NAMES.has(e.name));
       if (entry?.models?.length > 0) {
         setModelList(entry.models.map((m) => m.id));
       }
@@ -152,7 +154,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
     return [{
       filename: "~/Library/Application Support/Code/User/chatLanguageModels.json",
       content: JSON.stringify([{
-        name: "9Router",
+        name: "SAPI",
         vendor: "azure",
         apiKey: keyToUse,
         models: modelList.map((id) => ({
