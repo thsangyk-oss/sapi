@@ -21,8 +21,9 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/4] Building (npm run build)...
-call npm run build
+echo [2/4] Building (next build --webpack)...
+set NODE_ENV=production
+call .\node_modules\.bin\next build --webpack
 if errorlevel 1 (
   echo [ERROR] Build failed.
   exit /b 1
