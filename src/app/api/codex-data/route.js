@@ -41,13 +41,30 @@ export async function GET() {
       loadCodexData(),
     ]);
 
-    const group1 = activeCodex.map(summarize);
-    const groups = {
-      group1: { accounts: group1, limit: GROUP1_LIMIT, count: group1.length },
+    const groups = {};
+    const rawById = {
+      group1: activeCodex.map(summarize),
+      group2: (stored.groups.group2 || []).map(summarize),
+      group3: (stored.groups.group3 || []).map(summarize),
+      group4: (stored.groups.group4 || []).map(summarize),
+      group5: (stored.groups.group5 || []).map(summarize),
+      groupError: (stored.groups.groupError || []).map(summarize),
     };
+
+    // Sort:
+    //  - group1, group2: by quotaPercent ASC (lowest remaining first; nulls last)
+    //  - group3, group4, group5: by earliestResetAt ASC (soonest reset first; nulls last)
+    //  - groupError: by lastCheckedAt DESC (most recent failure first)
+    rawById.group1 = sortByQuotaAsc(rawById.group1);
+    rawById.group2 = sortByQuotaAsc(rawById.group2);
+    rawById.group3 = sortByResetAsc(rawById.group3);
+    rawById.group4 = sortByResetAsc(rawById.group4);
+    rawById.group5 = sortByResetAsc(rawById.group5);
+    rawById.groupError = sortByCheckedDesc(rawById.groupError);
+
+    groups.group1 = { accounts: rawById.group1, limit: GROUP1_LIMIT, count: rawById.group1.length };
     for (const g of ["group2", "group3", "group4", "group5", "groupError"]) {
-      const arr = stored.groups[g] || [];
-      groups[g] = { accounts: arr.map(summarize), count: arr.length };
+      groups[g] = { accounts: rawById[g], count: rawById[g].length };
     }
 
     return NextResponse.json({ groups, updatedAt: stored.updatedAt, group1Limit: GROUP1_LIMIT });
@@ -55,4 +72,28 @@ export async function GET() {
     console.error("[codex-data GET]", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
+}
+
+function sortByQuotaAsc(accounts) {
+  return [...accounts].sort((a, b) => {
+    const pa = a.quotaPercent === null || a.quotaPercent === undefined ? Number.POSITIVE_INFINITY : a.quotaPercent;
+    const pb = b.quotaPercent === null || b.quotaPercent === undefined ? Number.POSITIVE_INFINITY : b.quotaPercent;
+    return pa - pb;
+  });
+}
+
+function sortByResetAsc(accounts) {
+  return [...accounts].sort((a, b) => {
+    const ra = a.earliestResetAt ? new Date(a.earliestResetAt).getTime() : Number.POSITIVE_INFINITY;
+    const rb = b.earliestResetAt ? new Date(b.earliestResetAt).getTime() : Number.POSITIVE_INFINITY;
+    return ra - rb;
+  });
+}
+
+function sortByCheckedDesc(accounts) {
+  return [...accounts].sort((a, b) => {
+    const ta = a.lastCheckedAt ? new Date(a.lastCheckedAt).getTime() : 0;
+    const tb = b.lastCheckedAt ? new Date(b.lastCheckedAt).getTime() : 0;
+    return tb - ta;
+  });
 }
