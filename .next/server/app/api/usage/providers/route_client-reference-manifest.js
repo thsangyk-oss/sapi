@@ -1,0 +1,1 @@
+globalThis.__RSC_MANIFEST=(globalThis.__RSC_MANIFEST||{});globalThis.__RSC_MANIFEST["/api/usage/providers/route"]={"moduleLoading":{"prefix":"/_next/"},"ssrModuleMapping":{},"edgeSSRModuleMapping":{},"clientModules":{},"entryCSSFiles":{"C:\\Users\\MSI CLAW\\AppData\\Roaming\\sapi\\sapi\\src\\app\\api\\usage\\providers\\route":[]},"rscModuleMapping":{},"edgeRscModuleMapping":{}};
