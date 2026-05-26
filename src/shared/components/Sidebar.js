@@ -136,14 +136,16 @@ export default function Sidebar({ onClose }) {
         {/* Logo */}
         <div className="px-6 py-4 flex flex-col gap-2">
           <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex items-center justify-center size-9 rounded-[10px] bg-gradient-to-br from-brand-500 to-brand-700 shadow-[var(--shadow-warm)]">
-              <span className="material-symbols-outlined text-white text-[20px]">hub</span>
-            </div>
+            <img
+              src="/icons/icon-192.png"
+              alt={`${APP_CONFIG.name} ${APP_CONFIG.description}`}
+              className="size-9 shrink-0 rounded-[10px] object-cover shadow-[var(--shadow-warm)]"
+            />
             <div className="flex flex-col">
               <h1 className="text-lg font-semibold tracking-tight text-text-main">
                 {APP_CONFIG.name}
               </h1>
-              <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
+              <span className="text-xs text-text-muted">{APP_CONFIG.description} · v{APP_CONFIG.version}</span>
             </div>
           </Link>
           {updateInfo && (
