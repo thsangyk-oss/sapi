@@ -35,6 +35,8 @@ if not exist ".next\standalone" (
   echo [ERROR] .next\standalone not found - build did not produce standalone output.
   exit /b 1
 )
+if exist ".next\standalone\public" rmdir /S /Q ".next\standalone\public"
+if exist ".next\standalone\.next\static" rmdir /S /Q ".next\standalone\.next\static"
 xcopy /E /I /Y "public" ".next\standalone\public" >nul
 xcopy /E /I /Y ".next\static" ".next\standalone\.next\static" >nul
 
