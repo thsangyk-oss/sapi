@@ -16,12 +16,12 @@ export async function GET(request, { params }) {
   }
 }
 
-// PUT /api/keys/[id] - Update key
+// PUT /api/keys/[id] - Update key (rename, toggle active)
 export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, name } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,9 +30,19 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (name !== undefined) {
+      const trimmed = String(name).trim();
+      if (!trimmed) {
+        return NextResponse.json({ error: "Name cannot be empty" }, { status: 400 });
+      }
+      updateData.name = trimmed.slice(0, 80);
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ key: existing });
+    }
 
     const updated = await updateApiKey(id, updateData);
-
     return NextResponse.json({ key: updated });
   } catch (error) {
     console.log("Error updating key:", error);

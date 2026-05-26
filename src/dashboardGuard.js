@@ -92,12 +92,12 @@ export async function proxy(request) {
         requireLogin = settings.requireLogin !== false;
         tunnelDashboardAccess = settings.tunnelDashboardAccess === true;
 
-        // Block tunnel/tailscale access if disabled (redirect to login)
+        // Block tunnel access if disabled (redirect to login). The tunnel may serve
+        // multiple subdomains under settings.tunnelHosts; check them all.
         if (!tunnelDashboardAccess) {
           const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
-          const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
-          const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
-          if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
+          const tunnelHosts = Array.isArray(settings.tunnelHosts) ? settings.tunnelHosts : [];
+          if (host && tunnelHosts.some((h) => typeof h === "string" && h.toLowerCase() === host)) {
             return NextResponse.redirect(new URL("/login", request.url));
           }
         }

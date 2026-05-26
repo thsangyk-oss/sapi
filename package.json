@@ -1,6 +1,6 @@
 {
   "name": "sapi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "SAPI local AI API gateway",
   "private": true,
   "scripts": {

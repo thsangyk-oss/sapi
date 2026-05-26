@@ -4,12 +4,11 @@ import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
 import {
-  enableTunnel, enableTailscale,
-  isTunnelManuallyDisabled, isTunnelReconnecting, isTailscaleReconnecting,
-  getTunnelService, getTailscaleService,
+  startTunnelIfConfigured,
+  isTunnelManuallyDisabled, isTunnelReconnecting,
+  getTunnelService,
 } from "@/lib/tunnel/tunnelManager";
 import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
-import { isTailscaleRunning } from "@/lib/tunnel/tailscale";
 import { loadState } from "@/lib/tunnel/state";
 import { checkInternet, probeUrlAlive } from "@/lib/tunnel/networkProbe";
 import {
@@ -42,7 +41,6 @@ const g = global.__appSingleton ??= {
   lastWatchdogTick: Date.now(),
   mitmStartInProgress: false,
   tunnelAutoResumed: false,
-  tailscaleAutoResumed: false,
 };
 
 export async function initializeApp() {
@@ -50,18 +48,11 @@ export async function initializeApp() {
     await cleanupProviderConnections();
     const settings = await getSettings();
 
-    // Auto-resume tunnel (once per process)
+    // Auto-resume tunnel (once per process) if state has subdomains configured.
     if (settings.tunnelEnabled && !g.tunnelAutoResumed) {
       g.tunnelAutoResumed = true;
       console.log("[InitApp] Tunnel was enabled, auto-resuming...");
       safeRestartTunnel("startup").catch((e) => console.log("[InitApp] Tunnel resume failed:", e.message));
-    }
-
-    // Auto-resume tailscale (once per process)
-    if (settings.tailscaleEnabled && !g.tailscaleAutoResumed) {
-      g.tailscaleAutoResumed = true;
-      console.log("[InitApp] Tailscale was enabled, auto-resuming...");
-      safeRestartTailscale("startup").catch((e) => console.log("[InitApp] Tailscale resume failed:", e.message));
     }
 
     if (!g.signalHandlersRegistered) {
@@ -130,46 +121,24 @@ async function safeRestartTunnel(reason) {
   if (svc.spawnInProgress) return;
   if (Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) return;
 
+  const state = loadState();
+  const primaryHost = Array.isArray(state?.subdomains) && state.subdomains[0];
+  if (!primaryHost) return;
+
   // Alive check: process up + URL responds → skip
   if (isCloudflaredRunning()) {
-    const state = loadState();
-    const publicUrl = state?.shortId ? `https://r${state.shortId}.9router.com` : null;
-    if (publicUrl && await probeUrlAlive(publicUrl)) return;
+    if (await probeUrlAlive(`https://${primaryHost}`)) return;
   }
 
   if (!await checkInternet()) return;
 
   console.log(`[Tunnel] safeRestart (${reason})`);
   try {
-    await enableTunnel();
+    await startTunnelIfConfigured();
     svc.lastRestartAt = Date.now();
     console.log("[Tunnel] restart success");
   } catch (err) {
     console.log("[Tunnel] restart failed:", err.message);
-  }
-}
-
-async function safeRestartTailscale(reason) {
-  const svc = getTailscaleService();
-  const settings = await getSettings();
-  if (!settings.tailscaleEnabled) return;
-  if (svc.cancelToken.cancelled) return;
-  if (svc.spawnInProgress) return;
-  if (Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) return;
-
-  if (isTailscaleRunning() && settings.tailscaleUrl) {
-    if (await probeUrlAlive(settings.tailscaleUrl)) return;
-  }
-
-  if (!await checkInternet()) return;
-
-  console.log(`[Tailscale] safeRestart (${reason})`);
-  try {
-    await enableTailscale();
-    svc.lastRestartAt = Date.now();
-    console.log("[Tailscale] restart success");
-  } catch (err) {
-    console.log("[Tailscale] restart failed:", err.message);
   }
 }
 
@@ -179,7 +148,6 @@ function startWatchdog() {
   if (g.watchdogInterval) return;
   g.watchdogInterval = setInterval(() => {
     safeRestartTunnel("watchdog").catch(() => {});
-    safeRestartTailscale("watchdog").catch(() => {});
   }, WATCHDOG_INTERVAL_MS);
   if (g.watchdogInterval.unref) g.watchdogInterval.unref();
 }
@@ -225,7 +193,6 @@ function startNetworkMonitor() {
       const reason = wasSleep && networkChanged ? "sleep+netchange"
         : wasSleep ? "sleep" : "netchange";
       safeRestartTunnel(reason).catch(() => {});
-      safeRestartTailscale(reason).catch(() => {});
     } catch (err) {
       console.log("[NetworkMonitor] error:", err.message);
     }

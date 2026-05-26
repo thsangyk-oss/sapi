@@ -103,6 +103,30 @@ if (!global._lastErrorProvider) {
 }
 const lastErrorProvider = global._lastErrorProvider;
 
+// Per-API-key heartbeats: { [apiKeyString]: lastSeenTsMs }
+// Used by the keys page to glow cards that are mid-request (before saveRequestUsage fires).
+if (!global._apiKeyHeartbeats) {
+  global._apiKeyHeartbeats = {};
+}
+const apiKeyHeartbeats = global._apiKeyHeartbeats;
+
+/**
+ * Record that an API key was just seen at the request boundary.
+ * Called from extractApiKey() so cards can glow even mid-flight.
+ */
+export function touchApiKey(apiKey) {
+  if (!apiKey || typeof apiKey !== "string") return;
+  apiKeyHeartbeats[apiKey] = Date.now();
+}
+
+/**
+ * Get a snapshot of heartbeats. Caller decides the staleness threshold.
+ * Returns { [apiKeyString]: lastSeenTsMs }.
+ */
+export function getApiKeyHeartbeats() {
+  return { ...apiKeyHeartbeats };
+}
+
 // Use global to share singleton across Next.js route modules
 if (!global._statsEmitter) {
   global._statsEmitter = new EventEmitter();

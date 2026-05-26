@@ -1,3 +1,33 @@
+# v0.1.1 (2026-05-26)
+
+## Features
+- System tray launcher (Windows): PowerShell + WinForms NotifyIcon runs the SAPI server in the background with hidden console; menu has Open / Restart / Show status / Open log folder / Quit; single-instance via global mutex; double-click opens the dashboard
+- Quick-launch icon: multi-size `sapi.ico` generated from `public/icons/icon-192.png`; `install-shortcut.cmd` installs Desktop + Start Menu shortcuts and supports `/autostart` (Windows Startup folder) and `/remove`
+- API Keys redesigned as cards: per-key card with inline rename (click name to edit, Enter to save, Esc to cancel), always-visible Copy / Show-Hide / Delete buttons, prominent token-and-request counter over the last 24 hours, and a relative "last-used" label
+- Live activity glow: a key card pulses yellow when it served (or is currently serving) a request within the last 2 minutes; backed by a new per-key heartbeat (`touchApiKey` in `extractApiKey`) plus a new `GET /api/keys/stats` endpoint
+- API key rename: `PUT /api/keys/[id]` now accepts a `name` field (≤80 chars, trimmed)
+- Cloudflare Tunnel redesigned as a Named-Tunnel + user-domain flow:
+  - **Authorize**: button runs `cloudflared tunnel login`, surfaces the Cloudflare dashboard URL in a modal (copy / open) and auto-detects the zone(s) once `cert.pem` exists
+  - **Authorized badge**: shows the resolved zone name(s)
+  - **Multi-subdomain ingress**: "+" button adds subdomains inline (with zone dropdown when multiple zones authorized); each subdomain row has Copy, Open, Delete; one tunnel routes many hostnames via a generated `config.yml`
+  - **Revoke** button: stops the SAPI tunnel and deletes the Cloudflare tunnel registration (leaves `~/.cloudflared/cert.pem` so it can be shared with manual cloudflared use)
+- New API routes: `POST/GET/DELETE /api/tunnel/authorize`, `POST /api/tunnel/revoke`, `POST /api/tunnel/subdomains`, `DELETE /api/tunnel/subdomains/[host]`
+
+## Improvements
+- Watchdog auto-resume now uses the new tunnel state schema (`{tunnelId, subdomains[]}`) and probes the primary subdomain for liveness
+- Tunnel status endpoint exposes `{authorized, zones, subdomains, login, running, reconnecting, ...}`; `dashboardGuard` reads `settings.tunnelHosts` (multi-host) instead of a single tunnel URL
+- Tray launcher reaps node children from prior abnormal exits via pidfile on next startup; Job Object kill-on-close set as best-effort belt-and-suspenders
+
+## Fixes
+- `cert.pem` path: cloudflared 2026.5.1 ignored `--origincert` for the `tunnel login` pre-check (always tested the OS default); switched to `~/.cloudflared/cert.pem` everywhere and dropped `--origincert` from all CLI calls
+- Modern cert format support: the cert.pem produced by cloudflared 2026+ is just an `ARGO TUNNEL TOKEN` block (base64 JSON with `zoneID`/`accountID`/`apiToken`) — added a parser that resolves zone names via `GET https://api.cloudflare.com/client/v4/zones/<zoneID>` with 24h in-memory cache, plus an X.509 fallback for older cert formats
+- Authorize fast-path: if `cert.pem` already exists, return `alreadyAuthorized:true` immediately instead of running login again
+- Surface cloudflared stderr on login failure so the UI shows the real reason instead of "Login failed before producing cert"
+
+## Removals
+- Tailscale support removed completely: `src/lib/tunnel/tailscale.js`, related lifecycle/state/settings, the entire Tailscale UI section (state, handlers, install/connect/disable modals) and the dead `/api/tunnel/tailscale-*` references
+- Quick Tunnel flow (`*.trycloudflare.com` via `r<shortId>.9router.com` worker) removed in favor of Named Tunnels on the user's own domain; `POST /api/tunnel/enable` route dropped
+
 # v0.4.18 (2026-05-05)
 
 ## Features

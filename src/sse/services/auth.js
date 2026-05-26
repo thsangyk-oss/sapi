@@ -1,4 +1,5 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings } from "@/lib/localDb";
+import { touchApiKey } from "@/lib/usageDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -286,12 +287,15 @@ export function extractApiKey(request) {
   // Check Authorization header first
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7);
+    const k = authHeader.slice(7);
+    touchApiKey(k);
+    return k;
   }
 
   // Check Anthropic x-api-key header
   const xApiKey = request.headers.get("x-api-key");
   if (xApiKey) {
+    touchApiKey(xApiKey);
     return xApiKey;
   }
 

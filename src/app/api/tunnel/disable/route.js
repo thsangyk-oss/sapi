@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { disableTunnel } from "@/lib/tunnel/tunnelManager";
 
+export const dynamic = "force-dynamic";
+
+// POST — stop the cloudflared process. Subdomains + authorization stay configured;
+// next call to addSubdomain or watchdog tick will restart it.
 export async function POST() {
   try {
     const result = await disableTunnel();
