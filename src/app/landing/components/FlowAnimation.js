@@ -49,12 +49,12 @@ export default function FlowAnimation() {
   return (
     <div className="mt-16 w-full max-w-4xl relative h-[360px] hidden md:flex items-center justify-center animate-[float_6s_ease-in-out_infinite]">
       {/* SAPI Hub - Center */}
-      <div className="relative z-20 w-32 h-32 rounded-full bg-[#23180f] border-2 border-[#f97815] shadow-[0_0_40px_rgba(249,120,21,0.3)] flex flex-col items-center justify-center gap-1 group cursor-pointer hover:scale-105 transition-transform duration-500">
+      <div className="relative z-20 w-32 h-32 rounded-full bg-[#0b1228] border-2 border-[#22d3ee] shadow-[0_0_40px_rgba(34,211,238,0.28)] flex flex-col items-center justify-center gap-1 group cursor-pointer hover:scale-105 transition-transform duration-500">
         <img src="/favicon.png" alt="SAPI AI API" className="size-12 rounded-xl" />
         <span className="text-xs font-bold text-white tracking-widest uppercase">
           SAPI
         </span>
-        <div className="absolute inset-0 rounded-full border border-[#f97815]/30 animate-ping opacity-20"></div>
+        <div className="absolute inset-0 rounded-full border border-[#22d3ee]/30 animate-ping opacity-20"></div>
       </div>
 
       {/* CLI Tools - Left side */}
@@ -64,7 +64,7 @@ export default function FlowAnimation() {
             key={tool.id}
             className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity group"
           >
-            <div className="w-16 h-16 rounded-2xl bg-[#23180f] border border-[#3a2f27] flex items-center justify-center overflow-hidden p-2 hover:border-[#f97815]/50 transition-all hover:scale-105">
+            <div className="w-16 h-16 rounded-2xl bg-[#0b1228] border border-[#1e3a5f] flex items-center justify-center overflow-hidden p-2 hover:border-[#22d3ee]/50 transition-all hover:scale-105">
               <ProviderIcon
                 src={tool.image}
                 alt={tool.name}
@@ -120,28 +120,28 @@ export default function FlowAnimation() {
         <path
           d="M 440 180 C 550 180, 550 50, 740 50"
           fill="none"
-          stroke={activeFlow === 0 ? "#f97815" : "rgb(75, 85, 99)"}
+          stroke={activeFlow === 0 ? "#22d3ee" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 0 ? "3" : "2"}
           className={activeFlow === 0 ? "animate-pulse" : ""}
         ></path>
         <path
           d="M 440 180 C 550 180, 550 130, 740 130"
           fill="none"
-          stroke={activeFlow === 1 ? "#f97815" : "rgb(75, 85, 99)"}
+          stroke={activeFlow === 1 ? "#22d3ee" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 1 ? "3" : "2"}
           className={activeFlow === 1 ? "animate-pulse" : ""}
         ></path>
         <path
           d="M 440 180 C 550 180, 550 230, 740 230"
           fill="none"
-          stroke={activeFlow === 2 ? "#f97815" : "rgb(75, 85, 99)"}
+          stroke={activeFlow === 2 ? "#22d3ee" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 2 ? "3" : "2"}
           className={activeFlow === 2 ? "animate-pulse" : ""}
         ></path>
         <path
           d="M 440 180 C 550 180, 550 310, 740 310"
           fill="none"
-          stroke={activeFlow === 3 ? "#f97815" : "rgb(75, 85, 99)"}
+          stroke={activeFlow === 3 ? "#22d3ee" : "rgb(75, 85, 99)"}
           strokeWidth={activeFlow === 3 ? "3" : "2"}
           className={activeFlow === 3 ? "animate-pulse" : ""}
         ></path>
@@ -153,7 +153,7 @@ export default function FlowAnimation() {
           <div
             key={provider.id}
             className={`px-4 py-2 rounded-lg ${provider.color} ${provider.textColor} flex items-center justify-center font-bold text-xs shadow-lg hover:scale-110 transition-all cursor-help min-w-[140px] ${
-              activeFlow === idx ? "ring-4 ring-[#f97815]/50 scale-110" : ""
+              activeFlow === idx ? "ring-4 ring-[#22d3ee]/50 scale-110" : ""
             }`}
             title={provider.name}
           >
@@ -163,7 +163,7 @@ export default function FlowAnimation() {
       </div>
 
       {/* Mobile fallback */}
-      <div className="md:hidden mt-8 w-full p-4 rounded-lg bg-[#23180f] border border-[#3a2f27]">
+      <div className="md:hidden mt-8 w-full p-4 rounded-lg bg-[#0b1228] border border-[#1e3a5f]">
         <p className="text-sm text-center text-gray-400">
           Interactive diagram visible on desktop
         </p>
