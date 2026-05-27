@@ -82,7 +82,9 @@ export async function reclassifyResetGroups({ now = Date.now(), concurrency = 5 
       const target = BUCKET_TO_GROUP[bucket];
       if (!target || target === sourceGroup) continue;
       try {
-        await removeAccountFromGroup(sourceGroup, acc.id);
+        // addAccountToGroup is atomic: it removes the account from every other
+        // group before inserting. An explicit remove-first would risk losing
+        // the account if the subsequent add throws.
         await addAccountToGroup(target, acc);
         moves.push({ id: acc.id, name: acc.name || acc.email, from: sourceGroup, to: target, bucket, method: "local" });
       } catch (err) {

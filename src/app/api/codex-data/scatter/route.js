@@ -72,8 +72,8 @@ export async function POST() {
           await createProviderConnection({ ...rest, isActive: true });
           await removeAccountFromGroup(current, acc.id);
         } else {
-          // both storage, different group
-          await removeAccountFromGroup(current, acc.id);
+          // both in codex-data storage — addAccountToGroup is atomic
+          // (removes from every other group internally), no race window.
           await addAccountToGroup(target, acc);
         }
         moves.moved++;

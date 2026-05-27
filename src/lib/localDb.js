@@ -168,6 +168,19 @@ async function safeWrite(db) {
   await withFileLock(db, () => db.write());
 }
 
+// Safety: keep the most recent successful db.json snapshot as `db.json.bak`
+// next to the live file. Refreshed on every successful read.
+const DB_BAK_FILE = DB_FILE + ".bak";
+async function snapshotBackup() {
+  try {
+    // Only refresh the backup if the live file is non-empty and parses cleanly.
+    const text = await fs.promises.readFile(DB_FILE, "utf-8");
+    if (!text || !text.trim()) return;
+    JSON.parse(text);
+    await fs.promises.writeFile(DB_BAK_FILE, text);
+  } catch { /* leave old backup in place */ }
+}
+
 export async function getDb() {
   if (!dbInstance) {
     dbInstance = new Low(new JSONFile(DB_FILE), cloneDefaultData());
@@ -177,15 +190,52 @@ export async function getDb() {
     await safeRead(dbInstance);
   } catch (error) {
     if (error instanceof SyntaxError) {
-      console.warn('[DB] Corrupt JSON detected, resetting to defaults...');
-      dbInstance.data = cloneDefaultData();
-      await safeWrite(dbInstance);
+      // CRITICAL: never silently overwrite a corrupt db with defaults. A
+      // momentary parse error (BOM, half-written file, encoding hiccup) used
+      // to wipe every providerConnection, apiKey, combo, etc. Now we:
+      //   1. Move the bad file aside with a timestamp suffix so it can be
+      //      inspected / hand-recovered.
+      //   2. Restore from db.json.bak if a parseable backup exists.
+      //   3. Otherwise rehydrate from the seeded defaults (first-run path),
+      //      preserving the corrupt file for the user.
+      const ts = new Date().toISOString().replace(/[:.]/g, "-");
+      const corruptPath = `${DB_FILE}.corrupt.${ts}`;
+      try {
+        await fs.promises.copyFile(DB_FILE, corruptPath);
+        console.error(`[DB] Corrupt db.json — saved bad copy to ${corruptPath}`);
+      } catch (copyErr) {
+        console.error(`[DB] Failed to backup corrupt db.json: ${copyErr.message}`);
+      }
+
+      let restoredFromBak = false;
+      try {
+        if (fs.existsSync(DB_BAK_FILE)) {
+          const bakText = await fs.promises.readFile(DB_BAK_FILE, "utf-8");
+          const bakData = JSON.parse(bakText); // throws if backup also corrupt
+          dbInstance.data = bakData;
+          await safeWrite(dbInstance);
+          restoredFromBak = true;
+          console.warn(`[DB] Restored from db.json.bak — original moved to ${corruptPath}`);
+        }
+      } catch (bakErr) {
+        console.error(`[DB] Backup db.json.bak also unreadable: ${bakErr.message}`);
+      }
+
+      if (!restoredFromBak) {
+        // No usable backup — refuse to clobber the (preserved) corrupt file
+        // with defaults. Hard-fail so the caller / operator notices.
+        throw new Error(
+          `db.json is corrupt and no usable backup found. ` +
+          `Original preserved at ${corruptPath}. Fix or restore the file then retry.`
+        );
+      }
     } else {
       throw error;
     }
   }
 
   if (!dbInstance.data) {
+    // Truly first run (file just created with defaults) — write seeded data.
     dbInstance.data = cloneDefaultData();
     await safeWrite(dbInstance);
   } else {
@@ -193,6 +243,9 @@ export async function getDb() {
     dbInstance.data = data;
     if (changed) await safeWrite(dbInstance);
   }
+
+  // Refresh the rolling backup after a confirmed-good read.
+  await snapshotBackup();
 
   return dbInstance;
 }

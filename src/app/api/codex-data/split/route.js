@@ -95,7 +95,8 @@ export async function POST() {
           await removeAccountFromGroup(currentGroup, acc.id);
           group1Inserted++;
         } else {
-          await removeAccountFromGroup(currentGroup, acc.id);
+          // addAccountToGroup atomically removes the account from every other
+          // group before inserting → safe single-call move, no race window.
           await addAccountToGroup(target, acc);
         }
         moves.push({ id: acc.id, name: acc.name || acc.email, from: currentGroup, to: target, quotaPercent: entry.quotaPercent });

@@ -80,8 +80,9 @@ export async function POST(request) {
       return NextResponse.json({ ok: true, from: source.group, to: "group1", account: created, idChanged: created.id !== source.account.id });
     }
 
-    // group2..5 → group3..5: rewrite in storage.
-    await removeAccountFromGroup(source.group, source.account.id);
+    // group2..5 → group3..5: addAccountToGroup is atomic (removes from every
+    // other group before inserting). No race window where the account would
+    // be missing from both source and target.
     await addAccountToGroup(toGroup, source.account);
     return NextResponse.json({ ok: true, from: source.group, to: toGroup, account: source.account });
   } catch (err) {

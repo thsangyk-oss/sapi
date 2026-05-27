@@ -1,3 +1,10 @@
+# v0.1.4 (2026-05-27)
+
+## Fixes (data-loss prevention)
+- **Critical**: `db.json`, `usage.json` and `codex-data.json` no longer self-destruct on a parse error. The previous behavior was "corrupt JSON detected → overwrite with defaults", which silently wiped every providerConnection / apiKey / combo / customModel / proxyPool / pricing override the moment something disturbed the file (BOM, half-written file, encoding hiccup). New behavior: preserve the bad file as `<file>.corrupt.<ISO-timestamp>`, attempt automatic restore from a rolling `.bak` written after every successful read, and throw a loud error if no usable backup exists.
+- Rolling `.bak` snapshots written next to each of the three data files on every confirmed-good read. Survives a single corruption event without operator intervention.
+- Fixed 4 unsafe `removeAccountFromGroup(src)` → `addAccountToGroup(dst)` pairs in `auto-redistribute.js`, `split/route.js`, `scatter/route.js`, `move/route.js`. If the second call threw (lock contention, ENOSPC, etc.) the account was permanently lost from the source group with nothing landing in the target. `addAccountToGroup` is already atomic — it removes the account from every other group before inserting — so the explicit remove-first was both redundant AND dangerous. Replaced with a single `addAccountToGroup(target, account)` call (no race window).
+
 # v0.1.3 (2026-05-27)
 
 ## Features

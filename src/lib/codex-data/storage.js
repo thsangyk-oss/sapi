@@ -41,12 +41,53 @@ async function withLock(fn) {
   }
 }
 
+// Critical: never silently return emptyData() on parse failure. That would
+// trick the scheduler into thinking 371+ accounts vanished and (worse) the
+// next `saveCodexData` would overwrite the corrupt file with empty groups.
+// On corruption: preserve a timestamped copy, restore from .bak if usable,
+// otherwise throw so the operator notices before any write happens.
+const BAK_FILE = FILE + ".bak";
+
+function snapshotBackup(text) {
+  try {
+    if (!text || !text.trim()) return;
+    JSON.parse(text); // confirm parseable
+    fs.writeFileSync(BAK_FILE, text);
+  } catch { /* leave old backup */ }
+}
+
 export async function loadCodexData() {
   ensureFile();
   const text = fs.readFileSync(FILE, "utf-8");
-  let raw;
-  try { raw = JSON.parse(text); } catch { raw = emptyData(); }
-  return normalize(raw);
+  try {
+    const raw = JSON.parse(text);
+    // Refresh rolling backup after a confirmed-good read.
+    snapshotBackup(text);
+    return normalize(raw);
+  } catch (err) {
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const corruptPath = `${FILE}.corrupt.${ts}`;
+    try {
+      fs.copyFileSync(FILE, corruptPath);
+      console.error(`[codex-data] Corrupt codex-data.json — saved bad copy to ${corruptPath}`);
+    } catch { /* ignore */ }
+    // Try the rolling backup.
+    if (fs.existsSync(BAK_FILE)) {
+      try {
+        const bakText = fs.readFileSync(BAK_FILE, "utf-8");
+        const bak = JSON.parse(bakText);
+        // Restore the live file from backup so subsequent writes are safe.
+        fs.writeFileSync(FILE, bakText);
+        console.warn(`[codex-data] Restored from codex-data.json.bak`);
+        return normalize(bak);
+      } catch { /* fall through */ }
+    }
+    throw new Error(
+      `codex-data.json is corrupt and no usable backup found. ` +
+      `Original preserved at ${corruptPath}. Fix or restore the file before the scheduler runs again. ` +
+      `(Underlying parse error: ${err.message})`
+    );
+  }
 }
 
 export async function saveCodexData(data) {

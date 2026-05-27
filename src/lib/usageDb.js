@@ -258,23 +258,58 @@ export async function getUsageDb() {
     const adapter = new JSONFile(DB_FILE);
     dbInstance = new Low(adapter, defaultData);
 
-    // Try to read DB with error recovery for corrupt JSON
+    // Read with error recovery. NEVER silently overwrite a corrupt usage
+    // history with defaults — that would erase token/cost ledgers that may be
+    // load-bearing for billing. Preserve the bad file and (only if a clean
+    // backup exists) restore from it.
     try {
       await dbInstance.read();
     } catch (error) {
       if (error instanceof SyntaxError) {
-        console.warn('[DB] Corrupt Usage JSON detected, resetting to defaults...');
-        dbInstance.data = defaultData;
-        await dbInstance.write();
+        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        const corruptPath = `${DB_FILE}.corrupt.${ts}`;
+        try {
+          fs.copyFileSync(DB_FILE, corruptPath);
+          console.error(`[DB] Corrupt usage.json — saved bad copy to ${corruptPath}`);
+        } catch (copyErr) {
+          console.error(`[DB] Failed to backup corrupt usage.json: ${copyErr.message}`);
+        }
+        const BAK = DB_FILE + ".bak";
+        let restored = false;
+        try {
+          if (fs.existsSync(BAK)) {
+            const bak = JSON.parse(fs.readFileSync(BAK, "utf-8"));
+            dbInstance.data = bak;
+            await dbInstance.write();
+            restored = true;
+            console.warn(`[DB] Restored usage from usage.json.bak`);
+          }
+        } catch { /* fall through */ }
+        if (!restored) {
+          throw new Error(
+            `usage.json is corrupt and no usable backup found. ` +
+            `Original preserved at ${corruptPath}.`
+          );
+        }
       } else {
         throw error;
       }
     }
 
     if (!dbInstance.data) {
+      // Truly empty/new file — seed defaults.
       dbInstance.data = { ...defaultData };
       await dbInstance.write();
     }
+
+    // Refresh rolling backup after a confirmed-good read.
+    try {
+      const text = fs.readFileSync(DB_FILE, "utf-8");
+      if (text && text.trim()) {
+        JSON.parse(text);
+        fs.writeFileSync(DB_FILE + ".bak", text);
+      }
+    } catch { /* leave old backup in place */ }
 
     // Migration: build dailySummary from existing history (one-time)
     if (!dbInstance.data.dailySummary) {
