@@ -10,7 +10,7 @@ import {
 } from "@/lib/tunnel/tunnelManager";
 import { killCloudflared, isCloudflaredRunning, ensureCloudflared } from "@/lib/tunnel/cloudflared";
 import { loadState } from "@/lib/tunnel/state";
-import { checkInternet, probeUrlAlive } from "@/lib/tunnel/networkProbe";
+import { checkInternet } from "@/lib/tunnel/networkProbe";
 import {
   RESTART_COOLDOWN_MS, NETWORK_SETTLE_MS,
   WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS,
@@ -122,13 +122,13 @@ async function safeRestartTunnel(reason) {
   if (Date.now() - svc.lastRestartAt < RESTART_COOLDOWN_MS) return;
 
   const state = loadState();
-  const primaryHost = Array.isArray(state?.subdomains) && state.subdomains[0];
-  if (!primaryHost) return;
+  if (!Array.isArray(state?.subdomains) || state.subdomains.length === 0) return;
 
-  // Alive check: process up + URL responds → skip
-  if (isCloudflaredRunning()) {
-    if (await probeUrlAlive(`https://${primaryHost}`)) return;
-  }
+  // Trust the cloudflared process: if it's alive, the tunnel is fine.
+  // Local HTTP probes are unreliable on restricted networks (corporate DNS
+  // often blocks the new CNAME) and would otherwise cause an infinite
+  // respawn loop → duplicate connectors → permanent "Reconnecting".
+  if (isCloudflaredRunning()) return;
 
   if (!await checkInternet()) return;
 

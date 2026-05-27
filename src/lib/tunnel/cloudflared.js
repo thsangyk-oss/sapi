@@ -464,19 +464,24 @@ export async function spawnNamedTunnel(tunnelId, configPath) {
 }
 
 // ─── Process lifecycle ───────────────────────────────────────────────────────
-function killCloudflaredByPort(port) {
-  if (!port) return;
+// Kill every cloudflared process spawned from our own binary. Named-tunnel
+// command lines no longer carry the local port, so port-matching (the previous
+// strategy) misses them and produces duplicate connectors. Matching by
+// ExecutablePath also keeps us from touching a system-wide cloudflared install.
+function killSapiCloudflared() {
   try {
     if (IS_WINDOWS) {
-      const psCmd = `Get-CimInstance Win32_Process -Filter \\"Name='cloudflared.exe'\\" | Where-Object { $_.CommandLine -match ':${port}(\\D|$)' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
+      const escapedBin = BIN_PATH.replace(/\\/g, "\\\\");
+      const psCmd = `Get-CimInstance Win32_Process -Filter \\"Name='cloudflared.exe'\\" | Where-Object { $_.ExecutablePath -eq '${escapedBin}' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
       execSync(`${POWERSHELL_HIDDEN_COMMAND} "${psCmd}"`, { stdio: "ignore", windowsHide: true });
     } else {
-      execSync(`pkill -f "cloudflared.*:${port}([^0-9]|$)" 2>/dev/null || true`, { stdio: "ignore", windowsHide: true });
+      const pat = BIN_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      execSync(`pkill -f "${pat}" 2>/dev/null || true`, { stdio: "ignore", windowsHide: true, shell: "/bin/sh" });
     }
   } catch { /* ignore */ }
 }
 
-export function killCloudflared(localPort) {
+export function killCloudflared() {
   if (cloudflaredProcess) {
     try { cloudflaredProcess.kill(); } catch {}
     cloudflaredProcess = null;
@@ -486,11 +491,34 @@ export function killCloudflared(localPort) {
     try { process.kill(pid); } catch {}
     clearPid();
   }
-  killCloudflaredByPort(localPort);
+  killSapiCloudflared();
 }
 
+/**
+ * True iff there's a live SAPI-owned cloudflared. Checks the tracked pidfile
+ * first, then falls back to scanning by ExecutablePath so we recover from
+ * stale pidfiles, Next hot-reload losing in-memory state, or pid handoffs.
+ */
 export function isCloudflaredRunning() {
   const pid = loadPid();
-  if (!pid) return false;
-  try { process.kill(pid, 0); return true; } catch { return false; }
+  if (pid) {
+    try { process.kill(pid, 0); return true; } catch { /* fall through */ }
+  }
+  try {
+    if (IS_WINDOWS) {
+      const escapedBin = BIN_PATH.replace(/\\/g, "\\\\");
+      const psCmd = `Get-CimInstance Win32_Process -Filter \\"Name='cloudflared.exe'\\" | Where-Object { $_.ExecutablePath -eq '${escapedBin}' } | Select-Object -First 1 -ExpandProperty ProcessId`;
+      const out = execSync(`${POWERSHELL_HIDDEN_COMMAND} "${psCmd}"`, {
+        windowsHide: true, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+      if (out) { savePid(parseInt(out, 10)); return true; }
+    } else {
+      const pat = BIN_PATH.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const out = execSync(`pgrep -f "${pat}" | head -1 || true`, {
+        encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], shell: "/bin/sh",
+      }).trim();
+      if (out) { savePid(parseInt(out, 10)); return true; }
+    }
+  } catch { /* ignore */ }
+  return false;
 }

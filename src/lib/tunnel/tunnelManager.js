@@ -1,5 +1,4 @@
 import {
-  ensureCloudflared,
   killCloudflared,
   isCloudflaredRunning,
   setUnexpectedExitHandler,
@@ -18,7 +17,6 @@ import {
 } from "./cloudflared.js";
 import { loadState, saveState, clearState } from "./state.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
-import { waitForHealth, probeUrlAlive } from "./networkProbe.js";
 
 const DEFAULT_TUNNEL_NAME = "sapi-local";
 
@@ -127,7 +125,7 @@ export function cancelAuthorize() {
 export async function revokeAuthorization() {
   svc.cancelToken.cancelled = true;
   setUnexpectedExitHandler(null);
-  killCloudflared(svc.activeLocalPort);
+  killCloudflared();
 
   const state = readState();
   if (state.tunnelId) {
@@ -196,7 +194,7 @@ export async function removeSubdomain(hostname, localPort = 20128) {
 async function restartTunnel(localPort) {
   svc.cancelToken = { cancelled: false };
   svc.activeLocalPort = localPort;
-  killCloudflared(localPort);
+  killCloudflared();
 
   const state = readState();
   if (!state.tunnelId || state.subdomains.length === 0) return; // nothing to run
@@ -211,11 +209,10 @@ async function restartTunnel(localPort) {
     });
     await spawnNamedTunnel(state.tunnelId, configPath);
     svc.lastRestartAt = Date.now();
-
-    // Verify the first subdomain serves /api/health (DNS may take a few seconds
-    // to propagate at the Cloudflare edge after `route dns`).
-    const publicUrl = `https://${state.subdomains[0]}`;
-    try { await waitForHealth(publicUrl, svc.cancelToken); } catch { /* warn but don't fail */ }
+    // We deliberately do NOT post-probe the public URL here. On a corporate
+    // LAN the SAPI machine often can't resolve its own tunnel hostname even
+    // though it works perfectly from the internet, and waiting just keeps the
+    // "Reconnecting" pill on the UI for no reason.
   } finally {
     svc.spawnInProgress = false;
   }
@@ -224,11 +221,14 @@ async function restartTunnel(localPort) {
 export async function startTunnelIfConfigured(localPort = 20128) {
   const state = readState();
   if (!state.tunnelId || state.subdomains.length === 0) return { skipped: true };
-  if (isCloudflaredRunning()) {
-    if (await probeUrlAlive(`https://${state.subdomains[0]}`)) {
-      return { alreadyRunning: true };
-    }
-  }
+
+  // cloudflared is the source of truth for tunnel health. Local HTTP probing
+  // is unreliable on restricted networks (corporate DNS often blocks new
+  // CNAMEs), and a failed probe was causing the watchdog to respawn the
+  // tunnel every minute → duplicate connectors → "Reconnecting" forever.
+  // We trust cloudflared's process: if it's alive, leave it alone.
+  if (isCloudflaredRunning()) return { alreadyRunning: true };
+
   await restartTunnel(localPort);
   return { started: true };
 }
@@ -236,7 +236,7 @@ export async function startTunnelIfConfigured(localPort = 20128) {
 export async function disableTunnel() {
   svc.cancelToken.cancelled = true;
   setUnexpectedExitHandler(null);
-  killCloudflared(svc.activeLocalPort);
+  killCloudflared();
   await updateSettings({ tunnelEnabled: false });
   return { success: true };
 }

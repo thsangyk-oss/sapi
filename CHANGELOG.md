@@ -1,3 +1,11 @@
+# v0.1.2 (2026-05-26)
+
+## Fixes
+- Tunnel was stuck in a permanent "Reconnecting" loop on restricted networks (corporate DNS, split-horizon resolvers) because the watchdog probed the public hostname via the local resolver — which often can't see the freshly-added CNAME even though the tunnel works fine from the internet. The watchdog now trusts the cloudflared process: if it's alive, the tunnel is considered healthy. The unreliable post-spawn `waitForHealth` is dropped from `restartTunnel` for the same reason.
+- `killCloudflared` could not reap named-tunnel processes because their command line no longer contains `:20128` (Quick Tunnels passed the port via `--url`; Named Tunnels do not). Result: each failed watchdog probe spawned another cloudflared without cleaning up the old one, accumulating duplicate connectors on Cloudflare's edge and producing reconnect churn. Now matches by `ExecutablePath == <DATA_DIR>/bin/cloudflared.exe` so it reaps all SAPI-owned processes without ever touching a user's system-wide cloudflared.
+- `isCloudflaredRunning` recovers from a stale pidfile (e.g. after Next hot-reload) by scanning Win32_Process / `pgrep` for the SAPI binary and re-syncing the pidfile when a match is found.
+- Removed unused `waitForHealth` / `probeUrlAlive` imports from the tunnel manager and watchdog.
+
 # v0.1.1 (2026-05-26)
 
 ## Features
