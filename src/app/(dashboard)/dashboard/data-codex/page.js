@@ -5,8 +5,6 @@ import {
   Bar,
   BarChart,
   Cell,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -456,89 +454,94 @@ function SchedulerBanner({ scheduler, busy, onToggle, onRunNow }) {
 }
 
 function OverviewCard({ stats }) {
-  // Group distribution data for stacked bar.
-  const groupBarData = GROUP_ORDER.map((g) => ({
-    group: g,
-    label: GROUP_META[g].short,
-    count: stats.perGroup[g].count,
-    fill: GROUP_COLORS[g],
-  }));
-
-  // Quota state pie (token-weighted).
-  const pieData = [
-    { name: "Usable now (G1+G2)", value: stats.usableNow, fill: QUOTA_STATE_COLORS.usableNow },
-    { name: "Reset <24h (G3)", value: stats.recoveringSoon, fill: QUOTA_STATE_COLORS.recoveringSoon },
-    { name: "Reset 24-72h (G4)", value: stats.recoveringMid, fill: QUOTA_STATE_COLORS.recoveringMid },
-    { name: "Reset >72h (G5)", value: stats.recoveringFar, fill: QUOTA_STATE_COLORS.recoveringFar },
-    { name: "Errors", value: stats.lost, fill: QUOTA_STATE_COLORS.lost },
-  ].filter((d) => d.value > 0);
+  // Stacked-bar segments by token state (weekly cap).
+  const segments = [
+    { key: "usableNow",      label: "Usable now",     short: "Now",   value: stats.usableNow,      color: QUOTA_STATE_COLORS.usableNow,      accs: stats.perGroup.group1.count + stats.perGroup.group2.count },
+    { key: "recoveringSoon", label: "Reset <24h",     short: "<24h",  value: stats.recoveringSoon, color: QUOTA_STATE_COLORS.recoveringSoon, accs: stats.perGroup.group3.count },
+    { key: "recoveringMid",  label: "Reset 24-72h",   short: "1-3d",  value: stats.recoveringMid,  color: QUOTA_STATE_COLORS.recoveringMid,  accs: stats.perGroup.group4.count },
+    { key: "recoveringFar",  label: "Reset >72h",     short: ">3d",   value: stats.recoveringFar,  color: QUOTA_STATE_COLORS.recoveringFar,  accs: stats.perGroup.group5.count },
+    { key: "lost",           label: "Errored",        short: "Err",   value: stats.lost,           color: QUOTA_STATE_COLORS.lost,           accs: stats.perGroup.groupError.count },
+  ];
+  const total = stats.grandTotal || 1;
+  const usablePct = (stats.usableNow / total) * 100;
 
   return (
     <Card className="p-5">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* KPIs */}
-        <div className="space-y-3">
-          <div>
-            <p className="text-xs uppercase text-text-muted tracking-wider">Overview</p>
-            <p className="text-3xl font-bold text-text-main mt-1">{stats.totalAccs} <span className="text-base text-text-muted font-normal">accounts</span></p>
-          </div>
-          <div className="space-y-1.5 text-sm">
-            <KpiRow color={QUOTA_STATE_COLORS.usableNow} label="Usable now" value={fmtTokens(stats.usableNow)} sub={`${stats.perGroup.group1.count + stats.perGroup.group2.count} acc · G1+G2`} />
-            <KpiRow color={QUOTA_STATE_COLORS.recoveringSoon} label="Reset soon (<24h)" value={fmtTokens(stats.recoveringSoon)} sub={`${stats.perGroup.group3.count} acc · G3`} />
-            <KpiRow color={QUOTA_STATE_COLORS.recoveringMid} label="Reset 24-72h" value={fmtTokens(stats.recoveringMid)} sub={`${stats.perGroup.group4.count} acc · G4`} />
-            <KpiRow color={QUOTA_STATE_COLORS.recoveringFar} label="Reset >72h" value={fmtTokens(stats.recoveringFar)} sub={`${stats.perGroup.group5.count} acc · G5`} />
-            <KpiRow color={QUOTA_STATE_COLORS.lost} label="Errored" value={fmtTokens(stats.lost)} sub={`${stats.perGroup.groupError.count} acc · Err`} />
-          </div>
-        </div>
-
-        {/* Account count per group bar */}
-        <div>
-          <p className="text-xs uppercase text-text-muted tracking-wider mb-2">Accounts per group</p>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={groupBarData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--text-muted, #888)" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "var(--text-muted, #888)" }} axisLine={false} tickLine={false} width={32} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-              <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                {groupBarData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Token state pie */}
-        <div>
-          <p className="text-xs uppercase text-text-muted tracking-wider mb-2">Token state (weekly window)</p>
-          <ResponsiveContainer width="100%" height={180}>
-            <PieChart>
-              <Pie data={pieData} dataKey="value" nameKey="name" innerRadius={42} outerRadius={70} paddingAngle={2}>
-                {pieData.map((d, i) => <Cell key={i} fill={d.fill} />)}
-              </Pie>
-              <Tooltip
-                contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                formatter={(value, name) => [`${fmtTokens(value)} tokens`, name]}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-          <p className="text-center text-xs text-text-muted mt-1">
-            Total cap: <span className="font-mono text-text-main">{fmtTokens(stats.grandTotal)}</span>
+      <div className="flex items-end justify-between gap-4 flex-wrap mb-4">
+        <div className="min-w-0">
+          <p className="text-xs uppercase text-text-muted tracking-wider">Usable right now</p>
+          <p className="text-4xl font-bold tabular-nums" style={{ color: QUOTA_STATE_COLORS.usableNow }}>
+            {fmtTokens(stats.usableNow)}
+            <span className="text-lg text-text-muted font-normal ml-2">tokens</span>
+          </p>
+          <p className="text-sm text-text-muted mt-1">
+            <span className="font-mono text-text-main">{usablePct.toFixed(1)}%</span> of weekly cap
+            <span className="mx-1">·</span>
+            <span className="font-mono text-text-main">{stats.perGroup.group1.count + stats.perGroup.group2.count}</span> active acc
           </p>
         </div>
+        <div className="text-right">
+          <p className="text-xs uppercase text-text-muted tracking-wider">Weekly cap</p>
+          <p className="text-2xl font-mono text-text-main">{fmtTokens(stats.grandTotal)}</p>
+          <p className="text-xs text-text-muted mt-0.5">{stats.totalAccs} acc · 1% ≈ {fmtTokens(TOKENS_PER_PERCENT)}</p>
+        </div>
+      </div>
+
+      {/* Single stacked quota bar — the "fuel gauge" for the whole pool */}
+      <QuotaStackedBar segments={segments} total={total} />
+
+      {/* Compact legend rows under the bar, each clickable through to its group below */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-4">
+        {segments.map((s) => {
+          const pct = total > 0 ? (s.value / total) * 100 : 0;
+          return (
+            <div key={s.key} className="flex flex-col gap-1 p-2 rounded border border-border-subtle bg-surface-2/30">
+              <div className="flex items-center gap-1.5">
+                <span className="size-2.5 rounded-sm shrink-0" style={{ backgroundColor: s.color }} />
+                <span className="text-xs text-text-muted truncate">{s.label}</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-1">
+                <span className="text-sm font-mono font-semibold text-text-main">{fmtTokens(s.value)}</span>
+                <span className="text-[10px] font-mono text-text-muted">{pct.toFixed(1)}%</span>
+              </div>
+              <span className="text-[10px] text-text-muted">{s.accs} acc</span>
+            </div>
+          );
+        })}
       </div>
     </Card>
   );
 }
 
-function KpiRow({ color, label, value, sub }) {
+/**
+ * Horizontal stacked bar that visualises how the weekly token cap breaks down
+ * across the quota-state buckets. Each segment is width-proportional to its
+ * token share so "usable now" is instantly readable vs. "recovering" vs.
+ * "errored".
+ */
+function QuotaStackedBar({ segments, total }) {
+  const safeTotal = total > 0 ? total : 1;
   return (
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-        <span className="text-text-main truncate">{label}</span>
-      </div>
-      <div className="text-right">
-        <span className="font-mono text-text-main">{value}</span>
-        {sub && <span className="text-text-muted text-xs ml-2">{sub}</span>}
+    <div className="w-full">
+      <div className="h-6 w-full rounded-full overflow-hidden bg-surface-2 border border-border-subtle flex">
+        {segments.map((s) => {
+          const pct = (s.value / safeTotal) * 100;
+          if (pct <= 0) return null;
+          return (
+            <div
+              key={s.key}
+              className="h-full transition-all relative group"
+              style={{ width: `${pct}%`, backgroundColor: s.color }}
+              title={`${s.label}: ${fmtTokens(s.value)} (${pct.toFixed(1)}%)`}
+            >
+              {pct > 8 && (
+                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold text-white/95 drop-shadow">
+                  {s.short}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -551,6 +554,7 @@ function ActiveGroupCard({ group, data, stats, selected, onSelect, onCheck, onAp
   const hist = useMemo(() => computeQuotaHistogram(accs), [accs]);
   const limit = group === "group1" ? data.group1Limit : null;
   const isChecking = checkProgress?.group === group;
+  const avgPct = gs.avgPct;
 
   return (
     <Card
@@ -583,39 +587,115 @@ function ActiveGroupCard({ group, data, stats, selected, onSelect, onCheck, onAp
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 text-sm">
+      {/* Quota gauge — big, color-coded horizontal bar = the headline metric */}
+      <QuotaGauge pct={avgPct} group={group} />
+
+      <div className="grid grid-cols-2 gap-3 text-sm mt-3">
         <div>
           <p className="text-text-muted text-xs">Avg quota left</p>
-          <p className={`text-xl font-bold ${quotaPctColor(gs.avgPct)}`}>{fmtPct(gs.avgPct)}</p>
+          <p className={`text-xl font-bold ${quotaPctColor(avgPct)}`}>{fmtPct(avgPct)}</p>
           <p className="text-text-muted text-xs">{gs.checkedCount}/{gs.count} checked</p>
         </div>
-        <div>
+        <div className="text-right">
           <p className="text-text-muted text-xs">Tokens left</p>
           <p className="text-xl font-bold text-text-main font-mono">{fmtTokens(gs.tokensLeft)}</p>
-          <p className="text-text-muted text-xs">~{fmtTokens(gs.count * TOKENS_PER_ACC_FULL)} max</p>
+          <p className="text-text-muted text-xs">of ~{fmtTokens(gs.count * TOKENS_PER_ACC_FULL)} max</p>
         </div>
       </div>
 
+      {/* Accounts-by-quality strip: instantly shows how many acc are healthy vs depleted */}
       <div className="mt-3">
-        <p className="text-text-muted text-xs mb-1">Quota distribution</p>
-        <ResponsiveContainer width="100%" height={80}>
-          <BarChart data={hist} margin={{ top: 2, right: 2, left: 0, bottom: 0 }}>
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--text-muted, #888)" }} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8 }} formatter={(v) => [`${v} acc`, "Count"]} />
-            <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-              {hist.map((b, i) => {
-                const colors = ["#ef4444", "#f97316", "#facc15", "#84cc16", "#10b981"];
-                return <Cell key={i} fill={colors[i] || GROUP_COLORS[group]} />;
-              })}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-text-muted text-xs">Accounts by quota band</p>
+          <p className="text-[10px] text-text-muted">{gs.checkedCount} checked</p>
+        </div>
+        <QuotaHistogramStrip hist={hist} />
+        <div className="flex justify-between mt-1 text-[10px] text-text-muted font-mono">
+          <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+        </div>
       </div>
 
       <p className="text-xs text-text-muted mt-2 text-center">
         {selected ? "Click to collapse table" : "Click to view accounts"}
       </p>
     </Card>
+  );
+}
+
+/**
+ * Big horizontal quota gauge. Shows the average %-quota-remaining for a group
+ * as a width-proportional filled bar, color-coded by health (red→green).
+ */
+function QuotaGauge({ pct, group }) {
+  if (pct === null || pct === undefined || !Number.isFinite(Number(pct))) {
+    return (
+      <div className="w-full">
+        <div className="h-3 w-full rounded-full bg-surface-2 border border-border-subtle relative overflow-hidden">
+          <div className="absolute inset-0 flex items-center justify-center text-[10px] text-text-muted italic">
+            no checks yet
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const v = Math.max(0, Math.min(100, Number(pct)));
+  // Health → color: <10 red, <25 orange, <50 yellow, <75 lime, ≥75 green.
+  let color;
+  if (v < 10) color = "#ef4444";
+  else if (v < 25) color = "#f97316";
+  else if (v < 50) color = "#facc15";
+  else if (v < 75) color = "#84cc16";
+  else color = "#10b981";
+
+  return (
+    <div className="w-full">
+      <div className="h-3 w-full rounded-full bg-surface-2 border border-border-subtle overflow-hidden relative">
+        <div
+          className="h-full rounded-full transition-all"
+          style={{ width: `${v}%`, backgroundColor: color, boxShadow: `0 0 6px ${color}55` }}
+        />
+        {/* Subtle tick marks at 25 / 50 / 75 */}
+        {[25, 50, 75].map((t) => (
+          <div
+            key={t}
+            className="absolute top-0 bottom-0 w-px bg-border/40"
+            style={{ left: `${t}%` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 5-segment horizontal strip showing the count of accounts in each quota band
+ * (0-10 / 10-25 / 25-50 / 50-75 / 75-100). Width = share of checked accounts.
+ * Quick at-a-glance: a strip that's mostly green = group is healthy; mostly
+ * red/orange = depleted.
+ */
+function QuotaHistogramStrip({ hist }) {
+  const total = hist.reduce((s, b) => s + b.count, 0);
+  const colors = ["#ef4444", "#f97316", "#facc15", "#84cc16", "#10b981"];
+  if (total === 0) {
+    return (
+      <div className="h-2.5 w-full rounded-full bg-surface-2 border border-border-subtle" />
+    );
+  }
+  return (
+    <div className="h-2.5 w-full rounded-full overflow-hidden bg-surface-2 border border-border-subtle flex">
+      {hist.map((b, i) => {
+        const pct = (b.count / total) * 100;
+        if (pct <= 0) return null;
+        return (
+          <div
+            key={b.label}
+            className="h-full transition-all"
+            style={{ width: `${pct}%`, backgroundColor: colors[i] }}
+            title={`${b.label}: ${b.count} acc`}
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -674,6 +754,10 @@ function ResetsCombinedCard({ data, stats, histogram, selected, onSelectGroup, o
 function MiniGroupCard({ group, stats, selected, isChecking, checkProgress, busy, onSelect, onCheck, onApply, onStop }) {
   const meta = GROUP_META[group];
   const gs = stats.perGroup[group];
+  // Human-friendly recovery window per group
+  const window = group === "group3" ? "in <24h"
+    : group === "group4" ? "in 1-3 days"
+    : "in 3+ days";
   return (
     <div
       onClick={onSelect}
@@ -681,13 +765,21 @@ function MiniGroupCard({ group, stats, selected, isChecking, checkProgress, busy
       style={{ borderLeftColor: GROUP_COLORS[group], borderLeftWidth: 4 }}
     >
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-xs uppercase text-text-muted tracking-wider">{meta.short}</p>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="material-symbols-outlined text-[14px] shrink-0" style={{ color: GROUP_COLORS[group] }}>schedule</span>
+            <p className="text-xs uppercase text-text-muted tracking-wider truncate">{meta.short}</p>
+          </div>
           <p className="text-2xl font-bold text-text-main">
             {gs.count}
             {isChecking && <span className="ml-2 text-xs text-brand-500">⏳ {checkProgress.done}/{checkProgress.total}</span>}
           </p>
-          <p className="text-xs text-text-muted">~{fmtTokens(gs.count * TOKENS_PER_ACC_FULL)} on reset</p>
+          <div className="flex items-baseline gap-1.5 mt-0.5">
+            <span className="text-xs font-mono font-semibold" style={{ color: GROUP_COLORS[group] }}>
+              +{fmtTokens(gs.count * TOKENS_PER_ACC_FULL)}
+            </span>
+            <span className="text-[10px] text-text-muted">{window}</span>
+          </div>
         </div>
         <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
           {isChecking ? (
@@ -768,7 +860,7 @@ function AccountsTable({ group, accounts, liveResults, busy, onMove, onCheckOne 
               <tr className="text-left text-xs uppercase text-text-muted border-b border-border-subtle">
                 <th className="py-2 pr-3">Account</th>
                 <th className="py-2 pr-3">Status</th>
-                <th className="py-2 pr-3 text-right">Quota left</th>
+                <th className="py-2 pr-3">Quota left</th>
                 <th className="py-2 pr-3 text-right">Tokens left</th>
                 <th className="py-2 pr-3">Reset in</th>
                 <th className="py-2 pr-3">Error</th>
@@ -791,7 +883,26 @@ function AccountsTable({ group, accounts, liveResults, busy, onMove, onCheckOne 
                       {acc.name || acc.email || acc.id}
                     </td>
                     <td className="py-2 pr-3"><Badge variant={b.variant}>{b.label}</Badge></td>
-                    <td className={`py-2 pr-3 text-right font-mono tabular-nums ${quotaPctColor(pct)}`}>{fmtPct(pct)}</td>
+                    <td className="py-2 pr-3 min-w-[140px]">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-surface-2 border border-border-subtle overflow-hidden">
+                          {Number.isFinite(pct) ? (
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${Math.max(0, Math.min(100, pct))}%`,
+                                backgroundColor: pct < 10 ? "#ef4444"
+                                  : pct < 25 ? "#f97316"
+                                  : pct < 50 ? "#facc15"
+                                  : pct < 75 ? "#84cc16"
+                                  : "#10b981",
+                              }}
+                            />
+                          ) : null}
+                        </div>
+                        <span className={`font-mono tabular-nums text-xs w-12 text-right ${quotaPctColor(pct)}`}>{fmtPct(pct)}</span>
+                      </div>
+                    </td>
                     <td className="py-2 pr-3 text-right font-mono text-text-main">{tokensLeft !== null ? fmtTokens(tokensLeft) : "—"}</td>
                     <td className="py-2 pr-3 text-text-muted">
                       {formatHours(acc.hoursUntilReset)}

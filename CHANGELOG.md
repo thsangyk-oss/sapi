@@ -1,3 +1,15 @@
+# v0.1.5 (2026-05-27)
+
+## Improvements
+- Sidebar: moved **Data Codex** to right under **Endpoint** for easier access (codex pool management is a daily-driver task).
+- Data Codex redesigned to make quota state instantly readable:
+  - **Hero metric**: large "Usable right now" token count + % of weekly cap as the primary stat, instead of burying it in a 5-row KPI list.
+  - **Stacked quota bar** ("fuel gauge"): one horizontal bar segmenting the weekly token cap into Usable / Reset <24h / Reset 24-72h / Reset >72h / Errored — each segment width-proportional and color-coded so health is obvious at a glance. Replaces the side-by-side bar + pie charts.
+  - **Legend grid**: 5-up compact tiles under the gauge show token count + % + acc count per state — tabular, scannable.
+  - **G1 / G2 cards**: added a prominent horizontal **quota gauge** (3px filled bar, color graduated red→green at 10/25/50/75 thresholds, with subtle 25/50/75 tick marks). Below it, a 5-segment **"accounts by quota band" strip** shows the distribution of healthy vs depleted accounts as proportional widths. Old recharts BarChart per-card replaced — same info, much more compact and readable.
+  - **G3 / G4 / G5 mini cards**: now lead with the recovery window ("+X tokens in <24h", "in 1-3 days", "in 3+ days") since these accounts have 0% quota — the *when* is what matters, and it's color-coded to the group.
+  - **Accounts table**: each row now has an inline mini-bar for quota% (same red→green graduation as the gauge), with the % shown to the right. No more scanning a column of numbers to find depleted accounts.
+
 # v0.1.4 (2026-05-27)
 
 ## Fixes (data-loss prevention)
