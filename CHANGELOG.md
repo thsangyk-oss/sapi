@@ -1,3 +1,14 @@
+# v0.1.3 (2026-05-27)
+
+## Features
+- Preemptive token renewal: every hourly tick now sweeps every codex account across all groups (G1/G2/G3/G4/G5/groupError) plus the live DB G1 pool and refreshes any access token whose `expiresAt` is within 90 minutes. Only the OAuth refresh-token RPC is called (no quota fetch), so this is cheap and safe to run frequently. Tokens in `group2` and `groupError` — which used to sit dormant for days and silently die — are now kept fresh automatically.
+- `groupError` auto-retry: the scheduler re-checks every account in `groupError` on each tick. The full refresh-token + quota flow runs again, so accounts whose token revocation was transient (or who were dumped there by a one-off 401) get promoted back to `group2`/`group3`/`group4`/`group5` automatically. Previously `groupError` was a one-way trap — only manual UI retry could rescue an account.
+- New exported helper `refreshAccountInMemory()` in `codex-data/check.js` for callers that need just the refresh-token RPC without a quota fetch.
+
+## Improvements
+- `runCycle` step order documented + reordered to: `renewSoonToExpire` → `retryErrorGroup` → `reclassifyResetGroups` → `cycleGroup1`. Newly-recovered accounts can flow `groupError` → `group2` → `group1` within a single tick.
+- `lastResult` payload now includes `renew` and `retryError` summaries (additive; existing UI consumers are unaffected).
+
 # v0.1.2 (2026-05-26)
 
 ## Fixes

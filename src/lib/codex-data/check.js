@@ -29,6 +29,13 @@ async function buildProxyOptions(account) {
 
 // Refresh credentials in-memory; returns the updated patch (may be empty).
 // Does not write anywhere. Caller is responsible for persistence.
+// Exported so the scheduler can run preemptive token-renewal sweeps without
+// the cost of a full quota fetch.
+export async function refreshAccountInMemory(account, { force = false } = {}) {
+  const proxyOptions = await buildProxyOptions(account);
+  return refreshInMemory(account, { force, proxyOptions });
+}
+
 async function refreshInMemory(account, { force = false, proxyOptions } = {}) {
   const executor = getExecutor(account.provider);
   const credentials = {
