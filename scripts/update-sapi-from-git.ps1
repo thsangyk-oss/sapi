@@ -68,11 +68,28 @@ function Stop-SapiProcesses([string]$RepoPath) {
     }
 }
 
-function Invoke-Checked([string]$File, [string[]]$Args, [string]$WorkingDirectory) {
-    Write-Host ("> {0} {1}" -f $File, ($Args -join " "))
-    $p = Start-Process -FilePath $File -ArgumentList $Args -WorkingDirectory $WorkingDirectory -NoNewWindow -Wait -PassThru
-    if ($p.ExitCode -ne 0) {
-        throw "$File exited with code $($p.ExitCode)"
+function Invoke-Checked {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$File,
+
+        [string[]]$CommandArgs = @(),
+
+        [Parameter(Mandatory = $true)]
+        [string]$WorkingDirectory
+    )
+
+    Write-Host ("> {0} {1}" -f $File, ($CommandArgs -join " "))
+    Push-Location -LiteralPath $WorkingDirectory
+    try {
+        & $File @CommandArgs
+        $exitCode = $LASTEXITCODE
+    } finally {
+        Pop-Location
+    }
+
+    if ($exitCode -ne 0) {
+        throw "$File exited with code $exitCode"
     }
 }
 
@@ -94,12 +111,12 @@ if ($dirty) {
 }
 
 Write-Step "Pulling latest code"
-Invoke-Checked "git" @("-C", $repoPath, "fetch", "origin", $Branch, "--prune") $repoPath
-Invoke-Checked "git" @("-C", $repoPath, "checkout", $Branch) $repoPath
-Invoke-Checked "git" @("-C", $repoPath, "pull", "--ff-only", "origin", $Branch) $repoPath
+Invoke-Checked -File "git" -CommandArgs @("-C", $repoPath, "fetch", "origin", $Branch, "--prune") -WorkingDirectory $repoPath
+Invoke-Checked -File "git" -CommandArgs @("-C", $repoPath, "checkout", $Branch) -WorkingDirectory $repoPath
+Invoke-Checked -File "git" -CommandArgs @("-C", $repoPath, "pull", "--ff-only", "origin", $Branch) -WorkingDirectory $repoPath
 
 Write-Step "Installing dependencies"
-Invoke-Checked "npm.cmd" @("install") $repoPath
+Invoke-Checked -File "npm.cmd" -CommandArgs @("install") -WorkingDirectory $repoPath
 
 Write-Step "Building standalone app"
 $env:NODE_ENV = "production"
@@ -107,7 +124,7 @@ $nextCmd = Join-Path $repoPath "node_modules\.bin\next.cmd"
 if (-not (Test-Path $nextCmd)) {
     throw "next.cmd not found after npm install: $nextCmd"
 }
-Invoke-Checked $nextCmd @("build", "--webpack") $repoPath
+Invoke-Checked -File $nextCmd -CommandArgs @("build", "--webpack") -WorkingDirectory $repoPath
 
 $standalone = Join-Path $repoPath ".next\standalone"
 if (-not (Test-Path (Join-Path $standalone "server.js"))) {
