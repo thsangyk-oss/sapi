@@ -114,11 +114,13 @@ export async function POST(request) {
 
 async function checkOne(acc, group, persistToDb, autoMoveErrors) {
   try {
-    const { account: refreshed, usage } = await checkAccountQuota(acc, { persistToDb });
+    const { account: refreshed, usage, refreshed: didRefresh, refreshStatus } = await checkAccountQuota(acc, { persistToDb });
     const classification = classifyQuota(usage);
     const summary = buildSummary(usage);
     const nowIso = new Date().toISOString();
     const errorMsg = usage?.error || null;
+    const refreshFields = pickRefreshFields(refreshed);
+    const resultMeta = { refreshed: didRefresh, refreshStatus };
 
     // If usage errored and we're allowed to recycle, move to groupError.
     if (errorMsg && autoMoveErrors) {
@@ -130,6 +132,7 @@ async function checkOne(acc, group, persistToDb, autoMoveErrors) {
         lastClassification: "unknown",
         lastQuotaSummary: null,
         lastError: errorMsg,
+        ...refreshFields,
       };
       try {
         await addAccountToGroup("groupError", snapshot);
@@ -139,7 +142,7 @@ async function checkOne(acc, group, persistToDb, autoMoveErrors) {
           await removeAccountFromGroup(group, acc.id);
         }
         return {
-          result: makeResult(acc, classification, summary, errorMsg),
+          result: makeResult(refreshed, classification, summary, errorMsg, resultMeta),
           moved: true,
         };
       } catch {
@@ -152,6 +155,7 @@ async function checkOne(acc, group, persistToDb, autoMoveErrors) {
       lastClassification: classification,
       lastQuotaSummary: summary,
       lastError: errorMsg,
+      ...refreshFields,
     };
     if (group === "group1") {
       await updateProviderConnection(acc.id, patch);
@@ -163,7 +167,7 @@ async function checkOne(acc, group, persistToDb, autoMoveErrors) {
         expiresAt: refreshed.expiresAt,
       });
     }
-    return { result: makeResult(acc, classification, summary, errorMsg), moved: false };
+    return { result: makeResult(refreshed, classification, summary, errorMsg, resultMeta), moved: false };
   } catch (err) {
     // Hard exception (network, code bug). Treat same as auth error.
     const errorMsg = err.message;
@@ -183,6 +187,14 @@ async function checkOne(acc, group, persistToDb, autoMoveErrors) {
     }
     return { result: makeResult(acc, "unknown", null, errorMsg), moved: false };
   }
+}
+
+function pickRefreshFields(account) {
+  const fields = {};
+  for (const key of ["lastRefreshStatus", "lastRefreshError", "lastRefreshAttemptedAt", "lastRefreshedAt"]) {
+    if (account?.[key] !== undefined) fields[key] = account[key];
+  }
+  return fields;
 }
 
 // Worker-pool concurrent runner. Polls shouldAbort() between items.

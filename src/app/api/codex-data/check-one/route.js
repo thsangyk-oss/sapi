@@ -43,11 +43,13 @@ export async function POST(request) {
     const persistToDb = source.group === "group1";
     const shouldAutoMove = autoMoveOnError && source.group !== "groupError";
 
-    const { account: refreshed, usage } = await checkAccountQuota(source.account, { persistToDb });
+    const { account: refreshed, usage, refreshed: didRefresh, refreshStatus } = await checkAccountQuota(source.account, { persistToDb });
     const classification = classifyQuota(usage);
     const summary = buildSummary(usage);
     const errorMsg = usage?.error || null;
     const nowIso = new Date().toISOString();
+    const refreshFields = pickRefreshFields(refreshed);
+    const resultMeta = { refreshed: didRefresh, refreshStatus };
 
     let moved = false;
     if (errorMsg && shouldAutoMove) {
@@ -60,6 +62,7 @@ export async function POST(request) {
           lastClassification: "unknown",
           lastQuotaSummary: null,
           lastError: errorMsg,
+          ...refreshFields,
         };
         await addAccountToGroup("groupError", snapshot);
         if (source.group === "group1") await deleteProviderConnection(source.account.id);
@@ -74,6 +77,7 @@ export async function POST(request) {
         lastClassification: classification,
         lastQuotaSummary: summary,
         lastError: errorMsg,
+        ...refreshFields,
       };
       if (source.group === "group1") {
         await updateProviderConnection(source.account.id, patch);
@@ -89,7 +93,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       ok: true,
-      acc: makeResult(source.account, classification, summary, errorMsg),
+      acc: makeResult(refreshed, classification, summary, errorMsg, resultMeta),
       sourceGroup: source.group,
       movedToError: moved,
     });
@@ -97,4 +101,12 @@ export async function POST(request) {
     console.error("[codex-data check-one]", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
+}
+
+function pickRefreshFields(account) {
+  const fields = {};
+  for (const key of ["lastRefreshStatus", "lastRefreshError", "lastRefreshAttemptedAt", "lastRefreshedAt"]) {
+    if (account?.[key] !== undefined) fields[key] = account[key];
+  }
+  return fields;
 }

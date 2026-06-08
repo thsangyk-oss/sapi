@@ -1,10 +1,12 @@
 import { createHash } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { CODEX_DEFAULT_INSTRUCTIONS } from "../config/codexInstructions.js";
+import { OAUTH_ENDPOINTS } from "../config/appConstants.js";
 import { PROVIDERS } from "../config/providers.js";
 import { normalizeResponsesInput } from "../translator/helpers/responsesApiHelper.js";
 import { fetchImageAsBase64 } from "../translator/helpers/imageHelper.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { getConsistentMachineId } from "../../src/shared/utils/machineId.js";
 
 // In-memory map: hash(machineId + first assistant content) → { sessionId, lastUsed }
@@ -120,6 +122,65 @@ export class CodexExecutor extends BaseExecutor {
     // Fetch remote images before the synchronous transform/execute pipeline
     await this.prefetchImages(args.body);
     return super.execute(args);
+  }
+
+  async refreshCredentials(credentials, log, proxyOptions = null) {
+    if (!credentials?.refreshToken) return null;
+
+    try {
+      const response = await proxyAwareFetch(OAUTH_ENDPOINTS.openai.token, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: credentials.refreshToken,
+          client_id: PROVIDERS.codex.clientId,
+          scope: "openid profile email offline_access",
+        }),
+      }, proxyOptions);
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        let errorCode = null;
+        try {
+          const parsed = JSON.parse(errorText);
+          errorCode = parsed?.error?.code || (typeof parsed?.error === "string" ? parsed.error : null);
+        } catch { /* ignore non-json error bodies */ }
+
+        if (
+          errorCode === "refresh_token_reused" ||
+          errorCode === "invalid_grant" ||
+          errorCode === "token_expired" ||
+          errorCode === "invalid_token"
+        ) {
+          log?.error?.("TOKEN", "Codex refresh token invalid. Re-auth required.", {
+            status: response.status,
+            errorCode,
+          });
+          return { error: "unrecoverable_refresh_error", code: errorCode };
+        }
+
+        log?.error?.("TOKEN", "Codex refresh failed", {
+          status: response.status,
+          errorCode,
+        });
+        return { error: "refresh_failed", status: response.status, code: errorCode };
+      }
+
+      const tokens = await response.json();
+      log?.info?.("TOKEN", "Codex refreshed");
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || credentials.refreshToken,
+        expiresIn: tokens.expires_in,
+      };
+    } catch (error) {
+      log?.error?.("TOKEN", `Codex refresh error: ${error.message}`);
+      return { error: "refresh_network_error", message: error.message };
+    }
   }
 
   // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise

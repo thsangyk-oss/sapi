@@ -1,11 +1,12 @@
 // Shared formatters for codex-data check results.
 
-export function makeResult(acc, classification, summary, error) {
+export function makeResult(acc, classification, summary, error, meta = {}) {
   const { quotaUsed, quotaTotal, quotaPercent } = computeQuotaTotals(summary);
   const earliestResetAt = summary?.earliestResetAt || null;
   const hoursUntilReset = earliestResetAt
     ? Math.max(0, Math.round((new Date(earliestResetAt).getTime() - Date.now()) / 36e5 * 10) / 10)
     : null;
+  const refreshStatus = meta.refreshStatus || null;
   return {
     id: acc.id,
     name: acc.name || acc.email || acc.id,
@@ -16,6 +17,9 @@ export function makeResult(acc, classification, summary, error) {
     earliestResetAt,
     hoursUntilReset,
     error,
+    refreshed: meta.refreshed ?? refreshStatus?.refreshed ?? false,
+    refreshStatus: refreshStatus?.status || acc.lastRefreshStatus || null,
+    refreshError: refreshStatus?.error || acc.lastRefreshError || null,
   };
 }
 

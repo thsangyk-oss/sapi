@@ -123,6 +123,7 @@ export async function reclassifyResetGroups({ now = Date.now(), concurrency = 5 
             accessToken: checked.refreshed?.accessToken,
             refreshToken: checked.refreshed?.refreshToken,
             expiresAt: checked.refreshed?.expiresAt,
+            ...pickRefreshFields(checked.refreshed),
           });
         } catch { /* ignore */ }
         moves.push({ id: acc.id, name: acc.name || acc.email, from: sourceGroup, to: sourceGroup, bucket: "unknown", method: "verified-stay" });
@@ -140,6 +141,7 @@ export async function reclassifyResetGroups({ now = Date.now(), concurrency = 5 
             accessToken: checked.refreshed?.accessToken,
             refreshToken: checked.refreshed?.refreshToken,
             expiresAt: checked.refreshed?.expiresAt,
+            ...pickRefreshFields(checked.refreshed),
           });
         } catch { /* ignore */ }
         moves.push({ id: acc.id, name: acc.name || acc.email, from: sourceGroup, to: sourceGroup, bucket: bucketLabel, method: "verified-stay" });
@@ -170,14 +172,22 @@ export async function reclassifyResetGroups({ now = Date.now(), concurrency = 5 
 
 async function checkOneForCycle(acc) {
   try {
-    const { account: refreshed, usage } = await checkAccountQuota(acc, { persistToDb: true });
+    const { account: refreshed, usage, refreshStatus } = await checkAccountQuota(acc, { persistToDb: true });
     const classification = classifyQuota(usage);
     const summary = buildSummary(usage);
     const errorMsg = usage?.error || null;
-    return { acc, refreshed, classification, summary, error: errorMsg };
+    return { acc, refreshed, refreshStatus, classification, summary, error: errorMsg };
   } catch (err) {
-    return { acc, refreshed: acc, classification: "unknown", summary: null, error: err.message };
+    return { acc, refreshed: acc, refreshStatus: null, classification: "unknown", summary: null, error: err.message };
   }
+}
+
+function pickRefreshFields(account) {
+  const fields = {};
+  for (const key of ["lastRefreshStatus", "lastRefreshError", "lastRefreshAttemptedAt", "lastRefreshedAt"]) {
+    if (account?.[key] !== undefined) fields[key] = account[key];
+  }
+  return fields;
 }
 
 async function mapConcurrent(items, limit, fn) {
@@ -207,6 +217,7 @@ export async function cycleGroup1({ concurrency = 5, now = Date.now() } = {}) {
       lastClassification: r.classification,
       lastQuotaSummary: r.summary,
       lastError: r.error,
+      ...pickRefreshFields(r.refreshed),
     };
     try { await updateProviderConnection(r.acc.id, patch); } catch { /* ignore */ }
   }
@@ -310,6 +321,7 @@ export async function retryErrorGroup({ concurrency = 5 } = {}) {
       ...(checked.refreshed?.accessToken ? { accessToken: checked.refreshed.accessToken } : {}),
       ...(checked.refreshed?.refreshToken ? { refreshToken: checked.refreshed.refreshToken } : {}),
       ...(checked.refreshed?.expiresAt ? { expiresAt: checked.refreshed.expiresAt } : {}),
+      ...pickRefreshFields(checked.refreshed),
     };
 
     if (!target) {
@@ -385,8 +397,20 @@ export async function renewSoonToExpire({ thresholdMs = PREEMPTIVE_REFRESH_MS, c
     let patch = null;
     try {
       const r = await refreshAccountInMemory(acc, { force: true });
+      if (r.error) {
+        failed++;
+        details.push({ id: acc.id, name: acc.name || acc.email, group, ok: false, error: r.error });
+        return;
+      }
       if (r.refreshed && r.patch && (r.patch.accessToken || r.patch.refreshToken)) {
-        patch = r.patch;
+        const nowIso = new Date().toISOString();
+        patch = {
+          ...r.patch,
+          lastRefreshStatus: "refreshed",
+          lastRefreshError: null,
+          lastRefreshAttemptedAt: nowIso,
+          lastRefreshedAt: nowIso,
+        };
       }
     } catch (err) {
       failed++;

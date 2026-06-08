@@ -11,9 +11,64 @@ import { updateProviderConnection } from "@/lib/localDb";
 
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
 function isAuthExpiredMessage(usage) {
-  if (!usage?.message) return false;
-  const msg = usage.message.toLowerCase();
+  const msg = [usage?.message, usage?.error].filter(Boolean).join(" ").toLowerCase();
+  if (!msg) return false;
   return AUTH_EXPIRED_PATTERNS.some((p) => msg.includes(p));
+}
+
+function describeRefreshError(result, fallback = "Refresh returned no credentials") {
+  if (!result) return fallback;
+  if (typeof result === "string") return result;
+  if (result.error === "unrecoverable_refresh_error") {
+    return `Refresh token invalid or already used${result.code ? ` (${result.code})` : ""}`;
+  }
+  if (result.error) {
+    return `${result.error}${result.code ? ` (${result.code})` : ""}${result.status ? ` HTTP ${result.status}` : ""}`;
+  }
+  return fallback;
+}
+
+function emptyRefreshStatus() {
+  return {
+    attempted: false,
+    refreshed: false,
+    status: "not_needed",
+    error: null,
+    attempts: [],
+  };
+}
+
+function mergeRefreshStatus(current, result, reason) {
+  if (!result) return current;
+  const next = { ...current, attempts: current.attempts.slice() };
+  if (result.attempted) {
+    next.attempted = true;
+    next.status = result.refreshed ? "refreshed" : "failed";
+    next.attempts.push({
+      reason,
+      refreshed: !!result.refreshed,
+      error: result.error || null,
+    });
+  }
+  if (result.refreshed) {
+    next.refreshed = true;
+    next.status = "refreshed";
+    next.error = null;
+  } else if (result.error) {
+    next.error = result.error;
+  }
+  return next;
+}
+
+export function buildRefreshStatusPatch(refreshStatus) {
+  if (!refreshStatus) return {};
+  const patch = {
+    lastRefreshStatus: refreshStatus.status,
+    lastRefreshError: refreshStatus.error || null,
+  };
+  if (refreshStatus.attempted) patch.lastRefreshAttemptedAt = new Date().toISOString();
+  if (refreshStatus.refreshed) patch.lastRefreshedAt = new Date().toISOString();
+  return patch;
 }
 
 async function buildProxyOptions(account) {
@@ -45,12 +100,25 @@ async function refreshInMemory(account, { force = false, proxyOptions } = {}) {
     providerSpecificData: account.providerSpecificData,
   };
   const needsRefresh = force || executor.needsRefresh(credentials);
-  if (!needsRefresh) return { patch: {}, refreshed: false };
+  if (!needsRefresh) return { patch: {}, refreshed: false, attempted: false, error: null };
+
+  if (!credentials.refreshToken) {
+    const error = "No refresh token available";
+    if (account.accessToken) return { patch: {}, refreshed: false, attempted: true, error };
+    throw new Error(error);
+  }
 
   const refreshResult = await executor.refreshCredentials(credentials, console, proxyOptions);
   if (!refreshResult) {
-    if (account.accessToken) return { patch: {}, refreshed: false };
-    throw new Error("Failed to refresh credentials. Please re-authorize the connection.");
+    const error = describeRefreshError(refreshResult);
+    if (account.accessToken) return { patch: {}, refreshed: false, attempted: true, error };
+    throw new Error(`${error}. Please re-authorize the connection.`);
+  }
+
+  if (refreshResult.error || !refreshResult.accessToken) {
+    const error = describeRefreshError(refreshResult, "Refresh response did not include an access token");
+    if (account.accessToken) return { patch: {}, refreshed: false, attempted: true, error };
+    throw new Error(`${error}. Please re-authorize the connection.`);
   }
 
   const patch = { updatedAt: new Date().toISOString() };
@@ -61,7 +129,7 @@ async function refreshInMemory(account, { force = false, proxyOptions } = {}) {
   } else if (refreshResult.expiresAt) {
     patch.expiresAt = refreshResult.expiresAt;
   }
-  return { patch, refreshed: true };
+  return { patch, refreshed: true, attempted: true, error: null };
 }
 
 /**
@@ -83,14 +151,22 @@ export async function checkAccountQuota(account, { persistToDb = false } = {}) {
 
   // First refresh attempt (non-forced).
   let refreshPatch = {};
+  let refreshStatus = emptyRefreshStatus();
   try {
     const r = await refreshInMemory(account, { force: false, proxyOptions });
+    refreshStatus = mergeRefreshStatus(refreshStatus, r, "expiry");
     refreshPatch = r.patch;
   } catch (err) {
+    refreshStatus = mergeRefreshStatus(refreshStatus, {
+      attempted: true,
+      refreshed: false,
+      error: err.message,
+    }, "expiry");
     return {
-      account,
+      account: { ...account, ...buildRefreshStatusPatch(refreshStatus) },
       usage: { error: `Credential refresh failed: ${err.message}` },
       refreshed: false,
+      refreshStatus,
     };
   }
 
@@ -107,17 +183,48 @@ export async function checkAccountQuota(account, { persistToDb = false } = {}) {
   if (isAuthExpiredMessage(usage) && updatedAccount.refreshToken) {
     try {
       const retry = await refreshInMemory(updatedAccount, { force: true, proxyOptions });
-      refreshPatch = { ...refreshPatch, ...retry.patch };
-      updatedAccount = { ...updatedAccount, ...retry.patch };
-      usage = await getUsageForProvider(updatedAccount, proxyOptions);
+      refreshStatus = mergeRefreshStatus(refreshStatus, retry, "auth_error");
+      if (!retry.refreshed) {
+        usage = {
+          ...usage,
+          error: `Credential refresh failed after auth error: ${retry.error || "unknown refresh failure"}`,
+        };
+      } else {
+        refreshPatch = { ...refreshPatch, ...retry.patch };
+        updatedAccount = { ...updatedAccount, ...retry.patch };
+        usage = await getUsageForProvider(updatedAccount, proxyOptions);
+      }
     } catch (err) {
+      refreshStatus = mergeRefreshStatus(refreshStatus, {
+        attempted: true,
+        refreshed: false,
+        error: err.message,
+      }, "auth_error");
       usage = { error: `Force-refresh failed: ${err.message}` };
     }
+  } else if (isAuthExpiredMessage(usage) && !updatedAccount.refreshToken) {
+    refreshStatus = mergeRefreshStatus(refreshStatus, {
+      attempted: true,
+      refreshed: false,
+      error: "Authentication expired and no refresh token is available",
+    }, "auth_error");
+    usage = {
+      ...usage,
+      error: "Authentication expired and no refresh token is available",
+    };
   }
 
-  if (persistToDb && Object.keys(refreshPatch).length > 0) {
-    try { await updateProviderConnection(account.id, refreshPatch); } catch { /* best-effort */ }
+  const refreshStatusPatch = buildRefreshStatusPatch(refreshStatus);
+  updatedAccount = { ...updatedAccount, ...refreshStatusPatch };
+
+  if (persistToDb && Object.keys({ ...refreshPatch, ...refreshStatusPatch }).length > 0) {
+    try { await updateProviderConnection(account.id, { ...refreshPatch, ...refreshStatusPatch }); } catch { /* best-effort */ }
   }
 
-  return { account: updatedAccount, usage, refreshed: Object.keys(refreshPatch).length > 0 };
+  return {
+    account: updatedAccount,
+    usage,
+    refreshed: refreshStatus.refreshed,
+    refreshStatus,
+  };
 }

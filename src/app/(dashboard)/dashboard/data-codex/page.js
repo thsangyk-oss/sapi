@@ -44,6 +44,14 @@ function classificationBadge(value) {
   return { label: value, variant: "default" };
 }
 
+function refreshBadge(value) {
+  if (!value) return { label: "N/A", variant: "default" };
+  if (value === "refreshed") return { label: "Refreshed", variant: "success" };
+  if (value === "failed") return { label: "Refresh fail", variant: "error" };
+  if (value === "not_needed") return { label: "Not due", variant: "default" };
+  return { label: value, variant: "default" };
+}
+
 function formatTime(value) {
   if (!value) return "—";
   const d = new Date(value);
@@ -160,6 +168,7 @@ export default function DataCodexPage() {
       let finalTotal = 0;
       let errorCount = 0;
       let movedToError = 0;
+      let refreshedCount = 0;
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -179,6 +188,7 @@ export default function DataCodexPage() {
             setLiveResults((prev) => ({ ...prev, [evt.acc.id]: evt.acc }));
             setCheckProgress({ group, done: evt.done, total: evt.total });
             if (evt.acc.error) errorCount++;
+            if (evt.acc.refreshed) refreshedCount++;
             if (evt.movedToError) movedToError++;
           } else if (evt.type === "done") {
             finalTotal = evt.processed ?? evt.total;
@@ -189,6 +199,7 @@ export default function DataCodexPage() {
         }
       }
       const parts = [`Checked ${finalTotal} acc in ${group}`];
+      if (refreshedCount) parts.push(`${refreshedCount} refreshed`);
       if (errorCount) parts.push(`${errorCount} errored`);
       if (movedToError) parts.push(`${movedToError} → Errors`);
       notify({ message: parts.join(" · "), type: "success" });
@@ -226,7 +237,7 @@ export default function DataCodexPage() {
         ? `${body.acc.name}: error → moved to Errors`
         : body.acc.error
           ? `${body.acc.name}: ${body.acc.error.slice(0, 80)}`
-          : `${body.acc.name}: ${body.acc.classification}${body.acc.quotaPercent !== null ? ` (${body.acc.quotaPercent}% left)` : ""}`;
+          : `${body.acc.name}: ${body.acc.classification}${body.acc.refreshed ? " refreshed" : ""}${body.acc.quotaPercent !== null ? ` (${body.acc.quotaPercent}% left)` : ""}`;
       notify({ message: msg, type: body.acc.error ? "warning" : "success" });
       await load();
     } catch (err) {
@@ -824,7 +835,7 @@ function ErrorsCard({ data, stats, selected, onSelect, onCheck, onApply, checkPr
             {gs.count}
             {isChecking && <span className="ml-2 text-xs text-brand-500">⏳ {checkProgress.done}/{checkProgress.total}</span>}
           </p>
-          <p className="text-xs text-text-muted">Accounts that failed last check — likely revoked or rate-limited</p>
+          <p className="text-xs text-text-muted">Accounts that failed quota/auth check. Use Refresh status to separate retryable tokens from revoked auth.</p>
         </div>
         <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
           <Button size="sm" variant="secondary" icon="check_circle" onClick={onApply} loading={busy === "apply:groupError"} disabled={Boolean(busy) || gs.count === 0}>
@@ -860,6 +871,7 @@ function AccountsTable({ group, accounts, liveResults, busy, onMove, onCheckOne 
               <tr className="text-left text-xs uppercase text-text-muted border-b border-border-subtle">
                 <th className="py-2 pr-3">Account</th>
                 <th className="py-2 pr-3">Status</th>
+                <th className="py-2 pr-3">Refresh</th>
                 <th className="py-2 pr-3">Quota left</th>
                 <th className="py-2 pr-3 text-right">Tokens left</th>
                 <th className="py-2 pr-3">Reset in</th>
@@ -875,6 +887,8 @@ function AccountsTable({ group, accounts, liveResults, busy, onMove, onCheckOne 
                   ? { ...accFromInitial, ...live, lastCheckedAt: new Date().toISOString() }
                   : accFromInitial;
                 const b = classificationBadge(acc.classification || acc.lastClassification);
+                const rb = refreshBadge(acc.refreshStatus || acc.lastRefreshStatus);
+                const refreshError = acc.refreshError || acc.lastRefreshError;
                 const pct = acc.quotaPercent;
                 const tokensLeft = Number.isFinite(pct) ? Math.round(pct * TOKENS_PER_PERCENT) : null;
                 return (
@@ -883,6 +897,9 @@ function AccountsTable({ group, accounts, liveResults, busy, onMove, onCheckOne 
                       {acc.name || acc.email || acc.id}
                     </td>
                     <td className="py-2 pr-3"><Badge variant={b.variant}>{b.label}</Badge></td>
+                    <td className="py-2 pr-3" title={refreshError || ""}>
+                      <Badge variant={rb.variant}>{rb.label}</Badge>
+                    </td>
                     <td className="py-2 pr-3 min-w-[140px]">
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-2 rounded-full bg-surface-2 border border-border-subtle overflow-hidden">
